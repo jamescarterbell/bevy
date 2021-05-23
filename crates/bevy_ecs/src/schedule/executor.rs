@@ -1,11 +1,11 @@
-use crate::{archetype::ArchetypeGeneration, schedule::ParallelSystemContainer, world::World};
+use crate::{archetype::ArchetypeGeneration, schedule::ParallelSystemContainer, world::{World, WorldCollection}};
 use downcast_rs::{impl_downcast, Downcast};
 
 pub trait ParallelSystemExecutor: Downcast + Send + Sync {
     /// Called by `SystemStage` whenever `systems` have been changed.
     fn rebuild_cached_data(&mut self, systems: &[ParallelSystemContainer]);
 
-    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], world: &mut World);
+    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], worlds: &mut WorldCollection);
 }
 
 impl_downcast!(ParallelSystemExecutor);
@@ -25,8 +25,8 @@ impl Default for SingleThreadedExecutor {
 impl ParallelSystemExecutor for SingleThreadedExecutor {
     fn rebuild_cached_data(&mut self, _: &[ParallelSystemContainer]) {}
 
-    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], world: &mut World) {
-        self.update_archetypes(systems, world);
+    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], worlds: &mut WorldCollection) {
+        self.update_archetypes(systems, worlds);
 
         for system in systems {
             if system.should_run() {
@@ -34,7 +34,7 @@ impl ParallelSystemExecutor for SingleThreadedExecutor {
                 let system_span = bevy_utils::tracing::info_span!("system", name = &*system.name());
                 #[cfg(feature = "trace")]
                 let _system_guard = system_span.enter();
-                system.system_mut().run((), world);
+                system.system_mut().run((), worlds);
             }
         }
     }
@@ -43,8 +43,8 @@ impl ParallelSystemExecutor for SingleThreadedExecutor {
 impl SingleThreadedExecutor {
     /// Calls system.new_archetype() for each archetype added since the last call to
     /// [update_archetypes] and updates cached archetype_component_access.
-    fn update_archetypes(&mut self, systems: &mut [ParallelSystemContainer], world: &World) {
-        let archetypes = world.archetypes();
+    fn update_archetypes(&mut self, systems: &mut [ParallelSystemContainer], worlds: &WorldCollection) {
+        let archetypes = worlds.archetypes();
         let new_generation = archetypes.generation();
         let old_generation = std::mem::replace(&mut self.archetype_generation, new_generation);
         let archetype_index_range = old_generation.value()..new_generation.value();

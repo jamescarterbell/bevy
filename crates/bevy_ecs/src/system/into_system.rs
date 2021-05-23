@@ -5,17 +5,19 @@ use crate::{
     system::{
         check_system_change_tick, System, SystemId, SystemParam, SystemParamFetch, SystemParamState,
     },
-    world::World,
+    world::{World, WorldCollection},
 };
+use bevy_utils::HashMap;
 use bevy_ecs_macros::all_tuples;
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData, any::{TypeId, type_name}};
+use core::ops::{DerefMut};
 
 /// The state of a [`System`].
 pub struct SystemState {
     pub(crate) id: SystemId,
     pub(crate) name: Cow<'static, str>,
-    pub(crate) component_access_set: FilteredAccessSet<ComponentId>,
-    pub(crate) archetype_component_access: Access<ArchetypeComponentId>,
+    pub(crate) component_access_sets: HashMap<TypeId, FilteredAccessSet<ComponentId>>,
+    pub(crate) archetype_component_accesses: HashMap<TypeId, Access<ArchetypeComponentId>>,
     // NOTE: this must be kept private. making a SystemState non-send is irreversible to prevent
     // SystemParams from overriding each other
     is_send: bool,
@@ -26,8 +28,8 @@ impl SystemState {
     fn new<T>() -> Self {
         Self {
             name: std::any::type_name::<T>().into(),
-            archetype_component_access: Access::default(),
-            component_access_set: FilteredAccessSet::default(),
+            archetype_component_accesses: HashMap::default(),
+            component_access_sets: HashMap::default(),
             is_send: true,
             id: SystemId::new(),
             last_change_tick: 0,
@@ -46,6 +48,38 @@ impl SystemState {
     #[inline]
     pub fn set_non_send(&mut self) {
         self.is_send = false;
+    }
+
+    #[inline]
+    pub fn get_component_access_sets_mut<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self) -> &mut FilteredAccessSet<ComponentId>{
+        self
+            .component_access_sets
+            .entry(TypeId::of::<W>())
+            .or_insert(FilteredAccessSet::default())
+    }
+
+    #[inline]
+    pub fn get_component_access_sets<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &FilteredAccessSet<ComponentId>{
+        self
+            .component_access_sets
+            .get(&TypeId::of::<W>())
+            .expect(&format!("Component Access Set for {} cannot be found!", type_name::<W>())[..])
+    }
+
+    #[inline]
+    pub fn get_archtype_component_access_mut<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self) -> &mut Access<ArchetypeComponentId>{
+        self
+            .archetype_component_accesses
+            .entry(TypeId::of::<W>())
+            .or_insert(Access::default())
+    }
+
+    #[inline]
+    pub fn get_archtype_component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ArchetypeComponentId>{
+        self
+            .archetype_component_accesses
+            .get(&TypeId::of::<W>())
+            .expect(&format!("Archetype Access for {} cannot be found!", type_name::<W>())[..])
     }
 }
 
@@ -195,13 +229,13 @@ where
     }
 
     #[inline]
-    fn component_access(&self) -> &Access<ComponentId> {
-        &self.system_state.component_access_set.combined_access()
+    fn component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ComponentId> {
+        &self.system_state.get_component_access_sets::<W>().combined_access()
     }
 
     #[inline]
-    fn archetype_component_access(&self) -> &Access<ArchetypeComponentId> {
-        &self.system_state.archetype_component_access
+    fn archetype_component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ArchetypeComponentId> {
+        &self.system_state.get_archtype_component_access::<W>()
     }
 
     #[inline]
@@ -210,13 +244,13 @@ where
     }
 
     #[inline]
-    unsafe fn run_unsafe(&mut self, input: Self::In, world: &World) -> Self::Out {
-        let change_tick = world.increment_change_tick();
+    unsafe fn run_unsafe(&mut self, input: Self::In, worlds: &WorldCollection) -> Self::Out {
+        let change_tick = worlds.increment_change_tick();
         let out = self.func.run(
             input,
             self.param_state.as_mut().unwrap(),
             &self.system_state,
-            world,
+            worlds,
             change_tick,
         );
         self.system_state.last_change_tick = change_tick;
@@ -224,15 +258,15 @@ where
     }
 
     #[inline]
-    fn apply_buffers(&mut self, world: &mut World) {
+    fn apply_buffers(&mut self, worlds: &mut WorldCollection) {
         let param_state = self.param_state.as_mut().unwrap();
-        param_state.apply(world);
+        param_state.apply(worlds);
     }
 
     #[inline]
-    fn initialize(&mut self, world: &mut World) {
+    fn initialize(&mut self, worlds: &mut WorldCollection) {
         self.param_state = Some(<Param::Fetch as SystemParamState>::init(
-            world,
+            worlds,
             &mut self.system_state,
             self.config.take().unwrap(),
         ));
@@ -255,7 +289,7 @@ pub trait SystemParamFunction<In, Out, Param: SystemParam, Marker>: Send + Sync 
         input: In,
         state: &mut Param::Fetch,
         system_state: &SystemState,
-        world: &World,
+        worlds: &WorldCollection,
         change_tick: u32,
     ) -> Out;
 }
@@ -270,9 +304,9 @@ macro_rules! impl_system_function {
                 FnMut($(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            fn run(&mut self, _input: (), state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, worlds: &WorldCollection, change_tick: u32) -> Out {
                 unsafe {
-                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
+                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, worlds, change_tick);
                     self($($param),*)
                 }
             }
@@ -286,9 +320,9 @@ macro_rules! impl_system_function {
                 FnMut(In<Input>, $(<<$param as SystemParam>::Fetch as SystemParamFetch>::Item),*) -> Out + Send + Sync + 'static, Out: 'static
         {
             #[inline]
-            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, world: &World, change_tick: u32) -> Out {
+            fn run(&mut self, input: Input, state: &mut <($($param,)*) as SystemParam>::Fetch, system_state: &SystemState, worlds: &WorldCollection, change_tick: u32) -> Out {
                 unsafe {
-                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, world, change_tick);
+                    let ($($param,)*) = <<($($param,)*) as SystemParam>::Fetch as SystemParamFetch>::get_param(state, system_state, worlds, change_tick);
                     self(In(input), $($param),*)
                 }
             }

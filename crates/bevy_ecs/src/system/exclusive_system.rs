@@ -1,6 +1,6 @@
 use crate::{
     system::{check_system_change_tick, BoxedSystem, IntoSystem, System, SystemId},
-    world::World,
+    world::{World, WorldCollection},
 };
 use std::borrow::Cow;
 
@@ -9,15 +9,15 @@ pub trait ExclusiveSystem: Send + Sync + 'static {
 
     fn id(&self) -> SystemId;
 
-    fn run(&mut self, world: &mut World);
+    fn run(&mut self, worlds: &mut WorldCollection);
 
-    fn initialize(&mut self, world: &mut World);
+    fn initialize(&mut self, worlds: &mut WorldCollection);
 
     fn check_change_tick(&mut self, change_tick: u32);
 }
 
 pub struct ExclusiveSystemFn {
-    func: Box<dyn FnMut(&mut World) + Send + Sync + 'static>,
+    func: Box<dyn FnMut(&mut WorldCollection) + Send + Sync + 'static>,
     name: Cow<'static, str>,
     id: SystemId,
     last_change_tick: u32,
@@ -32,22 +32,22 @@ impl ExclusiveSystem for ExclusiveSystemFn {
         self.id
     }
 
-    fn run(&mut self, world: &mut World) {
+    fn run(&mut self, worlds: &mut WorldCollection) {
         // The previous value is saved in case this exclusive system is run by another exclusive
         // system
-        let saved_last_tick = world.last_change_tick;
-        world.last_change_tick = self.last_change_tick;
+        let saved_last_tick = worlds.last_change_tick;
+        worlds.last_change_tick = self.last_change_tick;
 
-        (self.func)(world);
+        (self.func)(worlds);
 
-        let change_tick = world.change_tick.get_mut();
+        let change_tick = worlds.change_tick.get_mut();
         self.last_change_tick = *change_tick;
         *change_tick += 1;
 
-        world.last_change_tick = saved_last_tick;
+        worlds.last_change_tick = saved_last_tick;
     }
 
-    fn initialize(&mut self, _: &mut World) {}
+    fn initialize(&mut self, _: &mut WorldCollection) {}
 
     fn check_change_tick(&mut self, change_tick: u32) {
         check_system_change_tick(&mut self.last_change_tick, change_tick, self.name.as_ref());
@@ -58,7 +58,7 @@ pub trait IntoExclusiveSystem<Params, SystemType> {
     fn exclusive_system(self) -> SystemType;
 }
 
-impl<F> IntoExclusiveSystem<&mut World, ExclusiveSystemFn> for F
+impl<F> IntoExclusiveSystem<&mut WorldCollection, ExclusiveSystemFn> for F
 where
     F: FnMut(&mut World) + Send + Sync + 'static,
 {
@@ -85,13 +85,13 @@ impl ExclusiveSystem for ExclusiveSystemCoerced {
         self.system.id()
     }
 
-    fn run(&mut self, world: &mut World) {
-        self.system.run((), world);
-        self.system.apply_buffers(world);
+    fn run(&mut self, worlds: &mut WorldCollection) {
+        self.system.run((), worlds);
+        self.system.apply_buffers(worlds);
     }
 
-    fn initialize(&mut self, world: &mut World) {
-        self.system.initialize(world);
+    fn initialize(&mut self, worlds: &mut WorldCollection) {
+        self.system.initialize(worlds);
     }
 
     fn check_change_tick(&mut self, change_tick: u32) {

@@ -2,7 +2,7 @@ use crate::{
     archetype::{ArchetypeComponentId, ArchetypeGeneration},
     query::Access,
     schedule::{ParallelSystemContainer, ParallelSystemExecutor},
-    world::World,
+    world::{World, WorldCollection},
 };
 use async_channel::{Receiver, Sender};
 use bevy_tasks::{ComputeTaskPool, Scope, TaskPool};
@@ -104,21 +104,21 @@ impl ParallelSystemExecutor for ParallelExecutor {
         }
     }
 
-    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], world: &mut World) {
+    fn run_systems(&mut self, systems: &mut [ParallelSystemContainer], worlds: &mut WorldCollection) {
         #[cfg(test)]
         if self.events_sender.is_none() {
             let (sender, receiver) = async_channel::unbounded::<SchedulingEvent>();
-            world.insert_resource(receiver);
+            worlds.insert_resource(receiver);
             self.events_sender = Some(sender);
         }
 
-        self.update_archetypes(systems, world);
+        self.update_archetypes(systems, worlds);
 
-        let compute_pool = world
+        let compute_pool = worlds
             .get_resource_or_insert_with(|| ComputeTaskPool(TaskPool::default()))
             .clone();
         compute_pool.scope(|scope| {
-            self.prepare_systems(scope, systems, world);
+            self.prepare_systems(scope, systems, worlds);
             scope.spawn(async {
                 // All systems have been ran if there are no queued or running systems.
                 while 0 != self.queued.count_ones(..) + self.running.count_ones(..) {
@@ -149,8 +149,8 @@ impl ParallelSystemExecutor for ParallelExecutor {
 impl ParallelExecutor {
     /// Calls system.new_archetype() for each archetype added since the last call to
     /// [update_archetypes] and updates cached archetype_component_access.
-    fn update_archetypes(&mut self, systems: &mut [ParallelSystemContainer], world: &World) {
-        let archetypes = world.archetypes();
+    fn update_archetypes(&mut self, systems: &mut [ParallelSystemContainer], worlds: &WorldCollection) {
+        let archetypes = worlds.archetypes();
         let new_generation = archetypes.generation();
         let old_generation = std::mem::replace(&mut self.archetype_generation, new_generation);
         let archetype_index_range = old_generation.value()..new_generation.value();
@@ -172,7 +172,7 @@ impl ParallelExecutor {
         &mut self,
         scope: &mut Scope<'scope, ()>,
         systems: &'scope [ParallelSystemContainer],
-        world: &'scope World,
+        worlds: &'scope WorldCollection,
     ) {
         self.should_run.clear();
         for (index, system_data) in self.system_metadata.iter_mut().enumerate() {
@@ -192,7 +192,7 @@ impl ParallelExecutor {
                         bevy_utils::tracing::info_span!("system", name = &*system.name());
                     #[cfg(feature = "trace")]
                     let system_guard = system_span.enter();
-                    unsafe { system.run_unsafe((), world) };
+                    unsafe { system.run_unsafe((), worlds) };
                     #[cfg(feature = "trace")]
                     drop(system_guard);
                     finish_sender

@@ -4,7 +4,7 @@ use crate::{
     archetype::{Archetype, ArchetypeComponentId},
     component::ComponentId,
     query::Access,
-    world::World,
+    world::{World, WorldCollection},
 };
 use std::borrow::Cow;
 
@@ -59,15 +59,15 @@ pub trait System: Send + Sync + 'static {
     ///     1. This system is the only system running on the given world across all threads.
     ///     2. This system only runs in parallel with other systems that do not conflict with the
     ///        [`System::archetype_component_access()`].
-    unsafe fn run_unsafe(&mut self, input: Self::In, world: &World) -> Self::Out;
+    unsafe fn run_unsafe(&mut self, input: Self::In, world: &WorldCollection) -> Self::Out;
     /// Runs the system with the given input in the world.
-    fn run(&mut self, input: Self::In, world: &mut World) -> Self::Out {
+    fn run(&mut self, input: Self::In, world: &mut WorldCollection) -> Self::Out {
         // SAFE: world and resources are exclusively borrowed
         unsafe { self.run_unsafe(input, world) }
     }
-    fn apply_buffers(&mut self, world: &mut World);
+    fn apply_buffers(&mut self, world: &mut WorldCollection);
     /// Initialize the system.
-    fn initialize(&mut self, _world: &mut World);
+    fn initialize(&mut self, _world: &mut WorldCollection);
     fn check_change_tick(&mut self, change_tick: u32);
 }
 

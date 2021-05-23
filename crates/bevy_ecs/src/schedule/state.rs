@@ -5,8 +5,10 @@ use crate::{
         SystemSet,
     },
     system::{In, IntoChainSystem, IntoSystem, Local, Res, ResMut},
+    world::{World, WorldCollection}
 };
 use std::{any::TypeId, fmt::Debug, hash::Hash};
+use core::ops::DerefMut;
 use thiserror::Error;
 
 /// ### Stack based state machine
@@ -408,8 +410,8 @@ fn should_run_adapter<T: Component + Clone + Eq>(
     }
 }
 
-fn state_cleaner<T: Component + Clone + Eq>(
-    mut state: ResMut<State<T>>,
+fn state_cleaner<T: Component + Clone + Eq, W: DerefMut<Target = World> + Send + Sync + 'static>(
+    mut state: ResMut<State<T>, W>,
     mut prep_exit: Local<bool>,
 ) -> ShouldRun {
     if *prep_exit {

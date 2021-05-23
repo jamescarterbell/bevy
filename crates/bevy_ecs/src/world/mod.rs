@@ -3,6 +3,8 @@ mod pointer;
 mod spawn_batch;
 mod world_cell;
 
+use bevy_utils::HashMap;
+use std::ops::{Deref, DerefMut};
 pub use entity_ref::*;
 pub use pointer::*;
 pub use spawn_batch::*;
@@ -31,6 +33,92 @@ pub struct WorldId(u64);
 impl Default for WorldId {
     fn default() -> Self {
         WorldId(rand::random())
+    }
+}
+/// [WorldCollection] stores and exposes operations on [world](World).
+pub struct WorldCollection{
+    pub(crate) worlds: HashMap<TypeId, Box<dyn DerefMut<Target = World> + Send + Sync>>,
+}
+
+impl WorldCollection{
+    #[inline]
+    pub fn get<'w, W: DerefMut<Target = World> + Send + Sync + 'static>(&'w self) -> Option<&'w (dyn DerefMut<Target = World> + Send + Sync)>{
+        self.worlds.get(&TypeId::of::<W>()).map(|inner| inner.deref())
+    }
+
+    #[inline]
+    pub fn get_mut<'w, W: DerefMut<Target = World> + Send + Sync + 'static>(&'w mut self) -> Option<&'w mut (dyn DerefMut<Target = World> + Send + Sync + 'static)>{
+        self.worlds.get_mut(&TypeId::of::<W>()).map(|inner| inner.deref_mut())
+    }
+
+    #[inline]
+    pub fn insert<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self, world: W){
+        self.worlds.insert(TypeId::of::<W>(), Box::new(world));
+    }
+}
+
+impl Default for WorldCollection{
+    fn default() -> Self{
+        let mut worlds = HashMap::default();
+        let main_world: Box<dyn DerefMut<Target = World> + Send + Sync> = Box::new(MainWorld::default());
+        worlds.insert(TypeId::of::<MainWorld>(), main_world);
+        Self{
+            worlds
+        }
+    }
+}
+
+/// [MainWorld] is the default Bevy world.
+pub struct MainWorld{
+    world: World
+}
+
+impl Default for MainWorld{
+    fn default() -> Self{
+        Self{
+            world: World::default(),
+        }
+    }
+}
+
+impl Deref for MainWorld{
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target{
+        &self.world
+    }
+}
+
+impl DerefMut for MainWorld{
+    fn deref_mut(&mut self) -> &mut Self::Target{
+        &mut self.world
+    }
+}
+
+
+pub(crate) struct CollectionlessWorld{
+    world: World
+}
+
+impl Default for CollectionlessWorld{
+    fn default() -> Self{
+        Self{
+            world: World::default(),
+        }
+    }
+}
+
+impl Deref for CollectionlessWorld{
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target{
+        &self.world
+    }
+}
+
+impl DerefMut for CollectionlessWorld{
+    fn deref_mut(&mut self) -> &mut Self::Target{
+        &mut self.world
     }
 }
 
@@ -465,8 +553,8 @@ impl World {
     /// assert_eq!(entities, vec![(c, &1, &6.0), (a, &2, &4.0), (b, &3, &5.0)]);
     /// ```
     #[inline]
-    pub fn query<Q: WorldQuery>(&mut self) -> QueryState<Q, ()> {
-        QueryState::new(self)
+    pub fn query<Q: WorldQuery>(&mut self) -> QueryState<Q, (), CollectionlessWorld> {
+        QueryState::from_world(self)
     }
 
     /// Returns [QueryState] for the given filtered [WorldQuery], which is used to efficiently
@@ -487,11 +575,11 @@ impl World {
     /// assert_eq!(matching_entities, vec![e2]);
     /// ```
     #[inline]
-    pub fn query_filtered<Q: WorldQuery, F: WorldQuery>(&mut self) -> QueryState<Q, F>
+    pub fn query_filtered<Q: WorldQuery, F: WorldQuery>(&mut self) -> QueryState<Q, F, CollectionlessWorld>
     where
         F::Fetch: FilterFetch,
     {
-        QueryState::new(self)
+        QueryState::from_world(self)
     }
 
     /// Returns an iterator of entities that had components of type `T` removed

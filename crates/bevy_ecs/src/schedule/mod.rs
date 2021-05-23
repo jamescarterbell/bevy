@@ -24,7 +24,7 @@ use std::fmt::Debug;
 
 use crate::{
     system::{IntoSystem, System},
-    world::World,
+    world::{World, WorldCollection},
 };
 use bevy_utils::HashMap;
 
@@ -197,7 +197,7 @@ impl Schedule {
             .and_then(|stage| stage.downcast_mut::<T>())
     }
 
-    pub fn run_once(&mut self, world: &mut World) {
+    pub fn run_once(&mut self, worlds: &mut WorldCollection) {
         for label in self.stage_order.iter() {
             #[cfg(feature = "trace")]
             let stage_span =
@@ -205,7 +205,7 @@ impl Schedule {
             #[cfg(feature = "trace")]
             let _stage_guard = stage_span.enter();
             let stage = self.stages.get_mut(label).unwrap();
-            stage.run(world);
+            stage.run(worlds);
         }
     }
 
@@ -218,16 +218,16 @@ impl Schedule {
 }
 
 impl Stage for Schedule {
-    fn run(&mut self, world: &mut World) {
+    fn run(&mut self, worlds: &mut WorldCollection) {
         loop {
-            match self.run_criteria.should_run(world) {
+            match self.run_criteria.should_run(worlds) {
                 ShouldRun::No => return,
                 ShouldRun::Yes => {
-                    self.run_once(world);
+                    self.run_once(worlds);
                     return;
                 }
                 ShouldRun::YesAndCheckAgain => {
-                    self.run_once(world);
+                    self.run_once(worlds);
                 }
                 ShouldRun::NoAndCheckAgain => {
                     panic!("`NoAndCheckAgain` would loop infinitely in this situation.")

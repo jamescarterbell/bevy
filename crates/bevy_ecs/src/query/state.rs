@@ -7,13 +7,15 @@ use crate::{
         ReadOnlyFetch, WorldQuery,
     },
     storage::TableId,
-    world::{World, WorldId},
+    world::{World, WorldId, WorldCollection, MainWorld},
 };
 use bevy_tasks::TaskPool;
 use fixedbitset::FixedBitSet;
 use thiserror::Error;
+use core::ops::DerefMut;
+use std::marker::PhantomData;
 
-pub struct QueryState<Q: WorldQuery, F: WorldQuery = ()>
+pub struct QueryState<Q: WorldQuery, F: WorldQuery = (), W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld>
 where
     F::Fetch: FilterFetch,
 {
@@ -29,13 +31,19 @@ where
     pub(crate) matched_archetype_ids: Vec<ArchetypeId>,
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
+    pub(crate) phantom: PhantomData<W>,
 }
 
-impl<Q: WorldQuery, F: WorldQuery> QueryState<Q, F>
+impl<Q: WorldQuery, F: WorldQuery, W: DerefMut<Target = World> + Send + Sync + 'static> QueryState<Q, F, W>
 where
     F::Fetch: FilterFetch,
 {
-    pub fn new(world: &mut World) -> Self {
+    pub fn new(worlds: &mut WorldCollection) -> Self {
+        let world = worlds.get_mut::<W>();
+        Self::from_world(world)
+    }
+
+    pub fn from_world(world: &mut World) -> Self{
         let fetch_state = <Q::State as FetchState>::init(world);
         let filter_state = <F::State as FetchState>::init(world);
 

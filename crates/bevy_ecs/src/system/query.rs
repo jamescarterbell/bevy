@@ -5,10 +5,11 @@ use crate::{
         Fetch, FilterFetch, QueryCombinationIter, QueryEntityError, QueryIter, QueryState,
         ReadOnlyFetch, WorldQuery,
     },
-    world::{Mut, World},
+    world::{Mut, World, WorldCollection, MainWorld},
 };
 use bevy_tasks::TaskPool;
-use std::{any::TypeId, fmt::Debug};
+use std::{any::TypeId, fmt::Debug, marker::PhantomData};
+use core::ops::DerefMut;
 use thiserror::Error;
 
 /// Provides scoped access to a [`World`] according to a given [`WorldQuery`] and query filter.
@@ -107,7 +108,7 @@ use thiserror::Error;
 ///
 /// This touches all the basics of queries, make sure to check out all the [`WorldQueries`](WorldQuery)
 /// bevy has to offer.
-pub struct Query<'w, Q: WorldQuery, F: WorldQuery = ()>
+pub struct Query<'w, Q: WorldQuery, F: WorldQuery = (), W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld>
 where
     F::Fetch: FilterFetch,
 {
@@ -115,9 +116,10 @@ where
     pub(crate) state: &'w QueryState<Q, F>,
     pub(crate) last_change_tick: u32,
     pub(crate) change_tick: u32,
+    pub(crate) phantom: PhantomData<W>,
 }
 
-impl<'w, Q: WorldQuery, F: WorldQuery> Query<'w, Q, F>
+impl<'w, Q: WorldQuery, F: WorldQuery, W: DerefMut<Target = World> + Send + Sync + 'static> Query<'w, Q, F, W>
 where
     F::Fetch: FilterFetch,
 {
@@ -129,13 +131,13 @@ where
     /// called in ways that ensure the queries have unique mutable access.
     #[inline]
     pub(crate) unsafe fn new(
-        world: &'w World,
-        state: &'w QueryState<Q, F>,
+        worlds: &'w WorldCollection,
+        state: &'w QueryState<Q, F, W>,
         last_change_tick: u32,
         change_tick: u32,
     ) -> Self {
         Self {
-            world,
+            world: worlds.get::<W>(),
             state,
             last_change_tick,
             change_tick,

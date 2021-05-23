@@ -4,7 +4,7 @@ use crate::{
     query::Access,
     schedule::{BoxedRunCriteriaLabel, GraphNode, RunCriteriaLabel},
     system::{BoxedSystem, System, SystemId},
-    world::World,
+    world::{World, WorldCollection},
 };
 use std::borrow::Cow;
 
@@ -64,14 +64,14 @@ impl BoxedRunCriteria {
         self.initialized = false;
     }
 
-    pub fn should_run(&mut self, world: &mut World) -> ShouldRun {
+    pub fn should_run(&mut self, worlds: &mut WorldCollection) -> ShouldRun {
         if let Some(ref mut run_criteria) = self.criteria_system {
             if !self.initialized {
-                run_criteria.initialize(world);
+                run_criteria.initialize(worlds);
                 self.initialized = true;
             }
-            let should_run = run_criteria.run((), world);
-            run_criteria.apply_buffers(world);
+            let should_run = run_criteria.run((), worlds);
+            run_criteria.apply_buffers(worlds);
             should_run
         } else {
             ShouldRun::Yes
@@ -116,10 +116,10 @@ impl RunCriteriaContainer {
         }
     }
 
-    pub fn initialize(&mut self, world: &mut World) {
+    pub fn initialize(&mut self, worlds: &mut WorldCollection) {
         match &mut self.inner {
-            RunCriteriaInner::Single(system) => system.initialize(world),
-            RunCriteriaInner::Piped { system, .. } => system.initialize(world),
+            RunCriteriaInner::Single(system) => system.initialize(worlds),
+            RunCriteriaInner::Piped { system, .. } => system.initialize(worlds),
         }
     }
 }
@@ -406,7 +406,7 @@ impl System for RunOnce {
         true
     }
 
-    unsafe fn run_unsafe(&mut self, _input: (), _world: &World) -> ShouldRun {
+    unsafe fn run_unsafe(&mut self, _input: (), _worlds: &WorldCollection) -> ShouldRun {
         if self.ran {
             ShouldRun::No
         } else {
@@ -415,9 +415,9 @@ impl System for RunOnce {
         }
     }
 
-    fn apply_buffers(&mut self, _world: &mut World) {}
+    fn apply_buffers(&mut self, _worlds: &mut WorldCollection) {}
 
-    fn initialize(&mut self, _world: &mut World) {}
+    fn initialize(&mut self, _worlds: &mut WorldCollection) {}
 
     fn check_change_tick(&mut self, _change_tick: u32) {}
 }

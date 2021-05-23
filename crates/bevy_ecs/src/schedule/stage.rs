@@ -9,7 +9,7 @@ use crate::{
         SingleThreadedExecutor, SystemContainer, SystemDescriptor, SystemSet,
     },
     system::System,
-    world::{World, WorldId},
+    world::{World, WorldId, WorldCollection},
 };
 use bevy_utils::{tracing::info, HashMap, HashSet};
 use downcast_rs::{impl_downcast, Downcast};
@@ -19,7 +19,7 @@ use std::fmt::Debug;
 pub trait Stage: Downcast + Send + Sync {
     /// Runs the stage; this happens once per update.
     /// Implementors must initialize all of their state and systems before running the first time.
-    fn run(&mut self, world: &mut World);
+    fn run(&mut self, worlds: &mut WorldCollection);
 }
 
 impl_downcast!(Stage);
@@ -320,7 +320,7 @@ impl SystemStage {
         index
     }
 
-    fn initialize_systems(&mut self, world: &mut World) {
+    fn initialize_systems(&mut self, worlds: &mut WorldCollection) {
         let mut criteria_labels = HashMap::default();
         let uninitialized_criteria: HashMap<_, _> =
             self.uninitialized_run_criteria.drain(..).collect();
@@ -353,7 +353,7 @@ impl SystemStage {
                             }
                         }
                     }
-                    container.initialize(world);
+                    container.initialize(worlds);
                 }
                 if let Some(label) = label {
                     criteria_labels.insert(label, new_index);
@@ -368,28 +368,28 @@ impl SystemStage {
             if let Some(index) = container.run_criteria() {
                 container.set_run_criteria(new_indices[index]);
             }
-            container.system_mut().initialize(world);
+            container.system_mut().initialize(worlds);
         }
         for index in self.uninitialized_before_commands.drain(..) {
             let container = &mut self.exclusive_before_commands[index];
             if let Some(index) = container.run_criteria() {
                 container.set_run_criteria(new_indices[index]);
             }
-            container.system_mut().initialize(world);
+            container.system_mut().initialize(worlds);
         }
         for index in self.uninitialized_at_end.drain(..) {
             let container = &mut self.exclusive_at_end[index];
             if let Some(index) = container.run_criteria() {
                 container.set_run_criteria(new_indices[index]);
             }
-            container.system_mut().initialize(world);
+            container.system_mut().initialize(worlds);
         }
         for index in self.uninitialized_parallel.drain(..) {
             let container = &mut self.parallel[index];
             if let Some(index) = container.run_criteria() {
                 container.set_run_criteria(new_indices[index]);
             }
-            container.system_mut().initialize(world);
+            container.system_mut().initialize(worlds);
         }
     }
 
@@ -465,7 +465,7 @@ impl SystemStage {
     }
 
     /// Logs execution order ambiguities between systems. System orders must be fresh.
-    fn report_ambiguities(&self, world: &World) {
+    fn report_ambiguities(&self, worlds: &WorldCollection) {
         debug_assert!(!self.systems_modified);
         use std::fmt::Write;
         fn write_display_names_of_pairs(
@@ -485,7 +485,7 @@ impl SystemStage {
                 if !conflicts.is_empty() {
                     let names = conflicts
                         .iter()
-                        .map(|id| world.components().get_info(*id).unwrap().name())
+                        .map(|id| {worlds.components().get_info(*id).unwrap().name()})
                         .collect::<Vec<_>>();
                     writeln!(string, "    conflicts: {:?}", names).unwrap();
                 }
@@ -505,7 +505,7 @@ impl SystemStage {
                 .to_owned();
             if !parallel.is_empty() {
                 writeln!(string, " * Parallel systems:").unwrap();
-                write_display_names_of_pairs(&mut string, &self.parallel, parallel, world);
+                write_display_names_of_pairs(&mut string, &self.parallel, parallel, worlds);
             }
             if !at_start.is_empty() {
                 writeln!(string, " * Exclusive systems at start of stage:").unwrap();
@@ -513,7 +513,7 @@ impl SystemStage {
                     &mut string,
                     &self.exclusive_at_start,
                     at_start,
-                    world,
+                    worlds,
                 );
             }
             if !before_commands.is_empty() {
@@ -522,20 +522,20 @@ impl SystemStage {
                     &mut string,
                     &self.exclusive_before_commands,
                     before_commands,
-                    world,
+                    worlds,
                 );
             }
             if !at_end.is_empty() {
                 writeln!(string, " * Exclusive systems at end of stage:").unwrap();
-                write_display_names_of_pairs(&mut string, &self.exclusive_at_end, at_end, world);
+                write_display_names_of_pairs(&mut string, &self.exclusive_at_end, at_end, worlds);
             }
             info!("{}", string);
         }
     }
 
     /// Checks for old component and system change ticks
-    fn check_change_ticks(&mut self, world: &mut World) {
-        let change_tick = world.change_tick();
+    fn check_change_ticks(&mut self, worlds: &mut WorldCollection) {
+        let change_tick = worlds.change_tick();
         let time_since_last_check = change_tick.wrapping_sub(self.last_tick_check);
         // Only check after at least `u32::MAX / 8` counts, and at most `u32::MAX / 4` counts
         // since the max number of [System] in a [SystemStage] is limited to `u32::MAX / 8`
@@ -558,7 +558,7 @@ impl SystemStage {
             }
 
             // Check component ticks
-            world.check_change_ticks();
+            worlds.check_change_ticks();
 
             self.last_tick_check = change_tick;
         }
@@ -733,24 +733,24 @@ fn find_ambiguities(systems: &[impl SystemContainer]) -> Vec<(usize, usize, Vec<
 }
 
 impl Stage for SystemStage {
-    fn run(&mut self, world: &mut World) {
+    fn run(&mut self, worlds: &mut WorldCollection) {
         if let Some(world_id) = self.world_id {
             assert!(
-                world.id() == world_id,
+                worlds.id() == world_id,
                 "Cannot run SystemStage on two different Worlds"
             );
         } else {
-            self.world_id = Some(world.id());
+            self.world_id = Some(worlds.id());
         }
 
         if self.systems_modified {
-            self.initialize_systems(world);
+            self.initialize_systems(worlds);
             self.rebuild_orders_and_dependencies();
             self.systems_modified = false;
             self.executor.rebuild_cached_data(&self.parallel);
             self.executor_modified = false;
-            if world.contains_resource::<ReportExecutionOrderAmbiguities>() {
-                self.report_ambiguities(world);
+            if worlds.contains_resource::<ReportExecutionOrderAmbiguities>() {
+                self.report_ambiguities(worlds);
             }
         } else if self.executor_modified {
             self.executor.rebuild_cached_data(&self.parallel);
@@ -759,7 +759,7 @@ impl Stage for SystemStage {
 
         let mut run_stage_loop = true;
         while run_stage_loop {
-            let should_run = self.stage_run_criteria.should_run(world);
+            let should_run = self.stage_run_criteria.should_run(worlds);
             match should_run {
                 ShouldRun::No => return,
                 ShouldRun::NoAndCheckAgain => continue,
@@ -774,12 +774,12 @@ impl Stage for SystemStage {
                 let (run_criteria, tail) = self.run_criteria.split_at_mut(index);
                 let mut criteria = &mut tail[0];
                 match &mut criteria.inner {
-                    RunCriteriaInner::Single(system) => criteria.should_run = system.run((), world),
+                    RunCriteriaInner::Single(system) => criteria.should_run = system.run((), worlds),
                     RunCriteriaInner::Piped {
                         input: parent,
                         system,
                         ..
-                    } => criteria.should_run = system.run(run_criteria[*parent].should_run, world),
+                    } => criteria.should_run = system.run(run_criteria[*parent].should_run, worlds),
                 }
             }
 
@@ -805,7 +805,7 @@ impl Stage for SystemStage {
                 // Run systems that want to be at the start of stage.
                 for container in &mut self.exclusive_at_start {
                     if should_run(container, &self.run_criteria, default_should_run) {
-                        container.system_mut().run(world);
+                        container.system_mut().run(worlds);
                     }
                 }
 
@@ -815,31 +815,31 @@ impl Stage for SystemStage {
                     container.should_run =
                         should_run(container, &self.run_criteria, default_should_run);
                 }
-                self.executor.run_systems(&mut self.parallel, world);
+                self.executor.run_systems(&mut self.parallel, worlds);
 
                 // Run systems that want to be between parallel systems and their command buffers.
                 for container in &mut self.exclusive_before_commands {
                     if should_run(container, &self.run_criteria, default_should_run) {
-                        container.system_mut().run(world);
+                        container.system_mut().run(worlds);
                     }
                 }
 
                 // Apply parallel systems' buffers.
                 for container in &mut self.parallel {
                     if container.should_run {
-                        container.system_mut().apply_buffers(world);
+                        container.system_mut().apply_buffers(worlds);
                     }
                 }
 
                 // Run systems that want to be at the end of stage.
                 for container in &mut self.exclusive_at_end {
                     if should_run(container, &self.run_criteria, default_should_run) {
-                        container.system_mut().run(world);
+                        container.system_mut().run(worlds);
                     }
                 }
 
                 // Check for old component and system change ticks
-                self.check_change_ticks(world);
+                self.check_change_ticks(worlds);
 
                 // Evaluate run criteria.
                 let run_criteria = &mut self.run_criteria;
@@ -852,7 +852,7 @@ impl Stage for SystemStage {
                         ShouldRun::YesAndCheckAgain | ShouldRun::NoAndCheckAgain => {
                             match &mut criteria.inner {
                                 RunCriteriaInner::Single(system) => {
-                                    criteria.should_run = system.run((), world)
+                                    criteria.should_run = system.run((), worlds)
                                 }
                                 RunCriteriaInner::Piped {
                                     input: parent,
@@ -860,7 +860,7 @@ impl Stage for SystemStage {
                                     ..
                                 } => {
                                     criteria.should_run =
-                                        system.run(run_criteria[*parent].should_run, world)
+                                        system.run(run_criteria[*parent].should_run, worlds)
                                 }
                             }
                             match criteria.should_run {

@@ -227,16 +227,16 @@ pub fn impl_query_set(_input: TokenStream) -> TokenStream {
                 where #(#filter::Fetch: FilterFetch,)*
             {
                 type Config = ();
-                fn init(world: &mut World, system_state: &mut SystemState, config: Self::Config) -> Self {
+                fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, config: Self::Config) -> Self {
                     #(
-                        let mut #query = QueryState::<#query, #filter>::new(world);
+                        let mut #query = QueryState::<#query, #filter>::new(worlds);
                         assert_component_access_compatibility(
                             &system_state.name,
                             std::any::type_name::<#query>(),
                             std::any::type_name::<#filter>(),
                             &system_state.component_access_set,
                             &#query.component_access,
-                            world,
+                            worlds,
                         );
                     )*
                     #(
@@ -272,11 +272,11 @@ pub fn impl_query_set(_input: TokenStream) -> TokenStream {
                 unsafe fn get_param(
                     state: &'a mut Self,
                     system_state: &'a SystemState,
-                    world: &'a World,
+                    worlds: &'a WorldCollection,
                     change_tick: u32,
                 ) -> Self::Item {
                     let (#(#query,)*) = &state.0;
-                    QuerySet((#(Query::new(world, #query, system_state.last_change_tick, change_tick),)*))
+                    QuerySet((#(Query::new(worlds, #query, system_state.last_change_tick, change_tick),)*))
                 }
             }
 
@@ -388,9 +388,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
 
         unsafe impl<TSystemParamState: #path::system::SystemParamState, #punctuated_generics> #path::system::SystemParamState for #fetch_struct_name<TSystemParamState, #punctuated_generic_idents> {
             type Config = TSystemParamState::Config;
-            fn init(world: &mut #path::world::World, system_state: &mut #path::system::SystemState, config: Self::Config) -> Self {
+            fn init(worlds: &mut #path::world::WorldCollection, system_state: &mut #path::system::SystemState, config: Self::Config) -> Self {
                 Self {
-                    state: TSystemParamState::init(world, system_state, config),
+                    state: TSystemParamState::init(worlds, system_state, config),
                     marker: std::marker::PhantomData,
                 }
             }
@@ -403,8 +403,8 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 TSystemParamState::default_config()
             }
 
-            fn apply(&mut self, world: &mut #path::world::World) {
-                self.state.apply(world)
+            fn apply(&mut self, worlds: &mut #path::world::WorldCollection) {
+                self.state.apply(worlds)
             }
         }
 
@@ -413,11 +413,11 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
             unsafe fn get_param(
                 state: &'a mut Self,
                 system_state: &'a #path::system::SystemState,
-                world: &'a #path::world::World,
+                worlds: &'a #path::world::WorldCollection,
                 change_tick: u32,
             ) -> Self::Item {
                 #struct_name {
-                    #(#fields: <<#field_types as SystemParam>::Fetch as #path::system::SystemParamFetch>::get_param(&mut state.state.#field_indices, system_state, world, change_tick),)*
+                    #(#fields: <<#field_types as SystemParam>::Fetch as #path::system::SystemParamFetch>::get_param(&mut state.state.#field_indices, system_state, worlds, change_tick),)*
                     #(#ignored_fields: <#ignored_field_types>::default(),)*
                 }
             }
