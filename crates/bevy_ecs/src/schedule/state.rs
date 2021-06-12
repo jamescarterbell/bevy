@@ -5,7 +5,7 @@ use crate::{
         SystemSet,
     },
     system::{In, IntoChainSystem, IntoSystem, Local, Res, ResMut},
-    world::{World, WorldCollection}
+    world::{World, WorldCollection, WorldKey}
 };
 use std::{any::TypeId, fmt::Debug, hash::Hash};
 use core::ops::DerefMut;
@@ -410,7 +410,7 @@ fn should_run_adapter<T: Component + Clone + Eq>(
     }
 }
 
-fn state_cleaner<T: Component + Clone + Eq, W: DerefMut<Target = World> + Send + Sync + 'static>(
+fn state_cleaner<T: Component + Clone + Eq, W: WorldKey>(
     mut state: ResMut<State<T>, W>,
     mut prep_exit: Local<bool>,
 ) -> ShouldRun {

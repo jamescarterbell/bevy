@@ -5,7 +5,7 @@ use crate::{
         Fetch, FilterFetch, QueryCombinationIter, QueryEntityError, QueryIter, QueryState,
         ReadOnlyFetch, WorldQuery,
     },
-    world::{Mut, World, WorldCollection, MainWorld},
+    world::{Mut, World, WorldCollection, MainWorld, WorldKey},
 };
 use bevy_tasks::TaskPool;
 use std::{any::TypeId, fmt::Debug, marker::PhantomData};
@@ -108,7 +108,7 @@ use thiserror::Error;
 ///
 /// This touches all the basics of queries, make sure to check out all the [`WorldQueries`](WorldQuery)
 /// bevy has to offer.
-pub struct Query<'w, Q: WorldQuery, F: WorldQuery = (), W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld>
+pub struct Query<'w, Q: WorldQuery, F: WorldQuery = (), W: WorldKey = MainWorld>
 where
     F::Fetch: FilterFetch,
 {
@@ -119,7 +119,7 @@ where
     pub(crate) phantom: PhantomData<W>,
 }
 
-impl<'w, Q: WorldQuery, F: WorldQuery, W: DerefMut<Target = World> + Send + Sync + 'static> Query<'w, Q, F, W>
+impl<'w, Q: WorldQuery, F: WorldQuery, W: WorldKey> Query<'w, Q, F, W>
 where
     F::Fetch: FilterFetch,
 {

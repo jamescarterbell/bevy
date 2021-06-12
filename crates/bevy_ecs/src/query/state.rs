@@ -7,7 +7,7 @@ use crate::{
         ReadOnlyFetch, WorldQuery,
     },
     storage::TableId,
-    world::{World, WorldId, WorldCollection, MainWorld},
+    world::{World, WorldId, WorldCollection, MainWorld, WorldKey},
 };
 use bevy_tasks::TaskPool;
 use fixedbitset::FixedBitSet;
@@ -15,7 +15,7 @@ use thiserror::Error;
 use core::ops::DerefMut;
 use std::marker::PhantomData;
 
-pub struct QueryState<Q: WorldQuery, F: WorldQuery = (), W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld>
+pub struct QueryState<Q: WorldQuery, F: WorldQuery = (), W: WorldKey = MainWorld>
 where
     F::Fetch: FilterFetch,
 {
@@ -34,7 +34,7 @@ where
     pub(crate) phantom: PhantomData<W>,
 }
 
-impl<Q: WorldQuery, F: WorldQuery, W: DerefMut<Target = World> + Send + Sync + 'static> QueryState<Q, F, W>
+impl<Q: WorldQuery, F: WorldQuery, W: WorldKey> QueryState<Q, F, W>
 where
     F::Fetch: FilterFetch,
 {

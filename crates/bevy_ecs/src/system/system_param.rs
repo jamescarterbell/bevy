@@ -5,7 +5,7 @@ use crate::{
     entity::{Entities, Entity},
     query::{FilterFetch, FilteredAccess, FilteredAccessSet, QueryState, WorldQuery},
     system::{CommandQueue, Commands, Query, SystemState},
-    world::{FromWorld, World, WorldCollection, MainWorld},
+    world::{FromWorld, World, WorldCollection, MainWorld, WorldKey},
 };
 pub use bevy_ecs_macros::SystemParam;
 use bevy_ecs_macros::{all_tuples, impl_query_set};
@@ -90,7 +90,7 @@ pub struct QueryFetch<Q, F, W>(PhantomData<(Q, F, W)>);
 impl<'a, Q: WorldQuery + 'static, F: WorldQuery + 'static, W> SystemParam for Query<'a, Q, F, W>
 where
     F::Fetch: FilterFetch,
-    W: DerefMut<Target = World> + Send + Sync + 'static,
+    W: WorldKey,
 {
     type Fetch = QueryState<Q, F, W>;
 }
@@ -100,7 +100,7 @@ where
 unsafe impl<Q: WorldQuery + 'static, F: WorldQuery + 'static, W> SystemParamState for QueryState<Q, F, W>
 where
     F::Fetch: FilterFetch,
-    W: DerefMut<Target = World> + Send + Sync + 'static,
+    W: WorldKey,
 {
     type Config = ();
 
@@ -136,7 +136,7 @@ where
 impl<'a, Q: WorldQuery + 'static, F: WorldQuery + 'static, W> SystemParamFetch<'a> for QueryState<Q, F, W>
 where
     F::Fetch: FilterFetch,
-    W: DerefMut<Target = World> + Send + Sync + 'static,
+    W: WorldKey,
 {
     type Item = Query<'a, Q, F, W>;
 
@@ -184,7 +184,7 @@ impl_query_set!();
 /// Panics when used as a [`SystemParameter`](SystemParam) if the resource does not exist.
 ///
 /// Use `Option<Res<T>>` instead if the resource might not always exist.
-pub struct Res<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld> {
+pub struct Res<'w, T: Component, W: WorldKey = MainWorld> {
     value: &'w T,
     ticks: &'w ComponentTicks,
     last_change_tick: u32,
@@ -195,14 +195,14 @@ pub struct Res<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'st
 impl<'w, T: Component, W> Debug for Res<'w, T, W>
 where
     T: Debug,
-    W: DerefMut<Target = World> + Send + Sync + 'static,
+    W: WorldKey,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Res").field(&self.value).finish()
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Res<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> Res<'w, T, W> {
     /// Returns true if (and only if) this resource been added since the last execution of this
     /// system.
     pub fn is_added(&self) -> bool {
@@ -217,7 +217,7 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Res<
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Deref for Res<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> Deref for Res<'w, T, W> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -225,7 +225,7 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Dere
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> AsRef<T> for Res<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> AsRef<T> for Res<'w, T, W> {
     #[inline]
     fn as_ref(&self) -> &T {
         self.deref()
@@ -233,18 +233,18 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> AsRe
 }
 
 /// The [`SystemParamState`] of [`Res`].
-pub struct ResState<T, W: DerefMut<Target = World> + Send + Sync + 'static> {
+pub struct ResState<T, W: WorldKey> {
     component_id: ComponentId,
     marker: PhantomData<(T, W)>,
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParam for Res<'a, T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParam for Res<'a, T, W> {
     type Fetch = ResState<T, W>;
 }
 
 // SAFE: Res ComponentId and ArchetypeComponentId access is applied to SystemState. If this Res
 // conflicts with any prior access, a panic will occur.
-unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamState for ResState<T, W> {
+unsafe impl<T: Component, W: WorldKey> SystemParamState for ResState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -263,7 +263,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
             .get_archetype_component_id(component_id)
             .unwrap();
         system_state
-            .get_archtype_component_access_mut::<W>()
+            .get_archetype_component_access_mut::<W>()
             .add_read(archetype_component_id);
         Self {
             component_id,
@@ -274,7 +274,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
     fn default_config() {}
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamFetch<'a> for ResState<T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParamFetch<'a> for ResState<T, W> {
     type Item = Res<'a, T>;
 
     #[inline]
@@ -306,13 +306,13 @@ impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Syst
 }
 
 /// The [`SystemParamState`] of `Option<Res<T>>`.
-pub struct OptionResState<T, W: DerefMut<Target = World> + Send + Sync + 'static = MainWorld>(ResState<T, W>);
+pub struct OptionResState<T, W: WorldKey = MainWorld>(ResState<T, W>);
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParam for Option<Res<'a, T, W>> {
+impl<'a, T: Component, W: WorldKey> SystemParam for Option<Res<'a, T, W>> {
     type Fetch = OptionResState<T, W>;
 }
 
-unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamState for OptionResState<T, W> {
+unsafe impl<T: Component, W: WorldKey> SystemParamState for OptionResState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -322,7 +322,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
     fn default_config() {}
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamFetch<'a> for OptionResState<T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParamFetch<'a> for OptionResState<T, W> {
     type Item = Option<Res<'a, T, W>>;
 
     #[inline]
@@ -353,7 +353,7 @@ impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Syst
 /// Panics when used as a [`SystemParameter`](SystemParam) if the resource does not exist.
 ///
 /// Use `Option<ResMut<T>>` instead if the resource might not always exist.
-pub struct ResMut<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> {
+pub struct ResMut<'w, T: Component, W: WorldKey> {
     value: &'w mut T,
     ticks: &'w mut ComponentTicks,
     last_change_tick: u32,
@@ -364,14 +364,14 @@ pub struct ResMut<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 
 impl<'w, T: Component, W> Debug for ResMut<'w, T, W>
 where
     T: Debug,
-    W: DerefMut<Target = World> + Send + Sync + 'static,
+    W: WorldKey,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("ResMut").field(&self.value).finish()
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> ResMut<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> ResMut<'w, T, W> {
     /// Returns true if (and only if) this resource been added since the last execution of this
     /// system.
     pub fn is_added(&self) -> bool {
@@ -396,7 +396,7 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> ResM
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Deref for ResMut<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> Deref for ResMut<'w, T, W> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -404,21 +404,21 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Dere
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> DerefMut for ResMut<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> DerefMut for ResMut<'w, T, W> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.set_changed();
         self.value
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> AsRef<T> for ResMut<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> AsRef<T> for ResMut<'w, T, W> {
     #[inline]
     fn as_ref(&self) -> &T {
         self.deref()
     }
 }
 
-impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> AsMut<T> for ResMut<'w, T, W> {
+impl<'w, T: Component, W: WorldKey> AsMut<T> for ResMut<'w, T, W> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
         self.deref_mut()
@@ -426,18 +426,18 @@ impl<'w, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> AsMu
 }
 
 /// The [`SystemParamState`] of [`ResMut`].
-pub struct ResMutState<T, W: DerefMut<Target = World> + Send + Sync + 'static> {
+pub struct ResMutState<T, W: WorldKey> {
     component_id: ComponentId,
     marker: PhantomData<(T, W)>,
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParam for ResMut<'a, T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParam for ResMut<'a, T, W> {
     type Fetch = ResMutState<T, W>;
 }
 
 // SAFE: Res ComponentId and ArchetypeComponentId access is applied to SystemState. If this Res
 // conflicts with any prior access, a panic will occur.
-unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamState for ResMutState<T, W> {
+unsafe impl<T: Component, W: WorldKey> SystemParamState for ResMutState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -462,7 +462,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
             .get_archetype_component_id(component_id)
             .unwrap();
         system_state
-            .get_archtype_component_access_mut::<W>()
+            .get_archetype_component_access_mut::<W>()
             .add_write(archetype_component_id);
         Self {
             component_id,
@@ -473,7 +473,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
     fn default_config() {}
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamFetch<'a> for ResMutState<T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParamFetch<'a> for ResMutState<T, W> {
     type Item = ResMut<'a, T, W>;
 
     #[inline]
@@ -505,13 +505,13 @@ impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Syst
 }
 
 /// The [`SystemParamState`] of `Option<ResMut<T>>`.
-pub struct OptionResMutState<T, W: DerefMut<Target = World> + Send + Sync + 'static>(ResMutState<T, W>);
+pub struct OptionResMutState<T, W: WorldKey>(ResMutState<T, W>);
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParam for Option<ResMut<'a, T, W>> {
+impl<'a, T: Component, W: WorldKey> SystemParam for Option<ResMut<'a, T, W>> {
     type Fetch = OptionResMutState<T, W>;
 }
 
-unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamState for OptionResMutState<T, W> {
+unsafe impl<T: Component, W: WorldKey> SystemParamState for OptionResMutState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -521,7 +521,7 @@ unsafe impl<T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> S
     fn default_config() {}
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> SystemParamFetch<'a> for OptionResMutState<T, W> {
+impl<'a, T: Component, W: WorldKey> SystemParamFetch<'a> for OptionResMutState<T, W> {
     type Item = Option<ResMut<'a, T, W>>;
 
     #[inline]
@@ -540,16 +540,17 @@ impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> Syst
                 ticks: value.component_ticks,
                 last_change_tick: system_state.last_change_tick,
                 change_tick,
+                worlds: PhantomData,
             })
     }
 }
 
-impl<'a> SystemParam for Commands<'a> {
-    type Fetch = CommandQueue;
+impl<'a, W: WorldKey> SystemParam for Commands<'a, W> {
+    type Fetch = CommandQueue<W>;
 }
 
 // SAFE: only local state is accessed
-unsafe impl SystemParamState for CommandQueue {
+unsafe impl<W: WorldKey> SystemParamState for CommandQueue<W> {
     type Config = ();
 
     fn init(_worlds: &mut WorldCollection, _system_state: &mut SystemState, _config: Self::Config) -> Self {
@@ -557,14 +558,14 @@ unsafe impl SystemParamState for CommandQueue {
     }
 
     fn apply(&mut self, worlds: &mut WorldCollection) {
-        self.apply(worlds);
+        self.apply(worlds.get_mut::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]));
     }
 
     fn default_config() {}
 }
 
-impl<'a> SystemParamFetch<'a> for CommandQueue {
-    type Item = Commands<'a>;
+impl<'a, W: WorldKey> SystemParamFetch<'a> for CommandQueue<W> {
+    type Item = Commands<'a, W>;
 
     #[inline]
     unsafe fn get_param(
@@ -573,7 +574,7 @@ impl<'a> SystemParamFetch<'a> for CommandQueue {
         worlds: &'a WorldCollection,
         _change_tick: u32,
     ) -> Self::Item {
-        Commands::new(state, worlds)
+        Commands::new(state, worlds.get::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]))
     }
 }
 
@@ -603,9 +604,9 @@ impl<'a> SystemParamFetch<'a> for CommandQueue {
 /// // Note how the read local is still 0 due to the locals not being shared.
 /// assert_eq!(read_system.run((), world), 0);
 /// ```
-pub struct Local<'a, T: Component>(&'a mut T);
+pub struct Local<'a, T: Component, W: WorldKey = MainWorld>(&'a mut T, PhantomData<W>);
 
-impl<'a, T: Component> Debug for Local<'a, T>
+impl<'a, T: Component, W:WorldKey> Debug for Local<'a, T, W>
 where
     T: Debug,
 {
@@ -614,7 +615,7 @@ where
     }
 }
 
-impl<'a, T: Component> Deref for Local<'a, T> {
+impl<'a, T: Component, W: WorldKey> Deref for Local<'a, T, W> {
     type Target = T;
 
     #[inline]
@@ -623,7 +624,7 @@ impl<'a, T: Component> Deref for Local<'a, T> {
     }
 }
 
-impl<'a, T: Component> DerefMut for Local<'a, T> {
+impl<'a, T: Component, W: WorldKey> DerefMut for Local<'a, T, W> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
@@ -631,18 +632,18 @@ impl<'a, T: Component> DerefMut for Local<'a, T> {
 }
 
 /// The [`SystemParamState`] of [`Local`].
-pub struct LocalState<T: Component>(T);
+pub struct LocalState<T: Component, W: WorldKey>(T, PhantomData<W>);
 
-impl<'a, T: Component + FromWorld> SystemParam for Local<'a, T> {
-    type Fetch = LocalState<T>;
+impl<'a, T: Component + FromWorld, W: WorldKey> SystemParam for Local<'a, T, W> {
+    type Fetch = LocalState<T, W>;
 }
 
 // SAFE: only local state is accessed
-unsafe impl<T: Component + FromWorld> SystemParamState for LocalState<T> {
+unsafe impl<T: Component + FromWorld, W: WorldKey> SystemParamState for LocalState<T, W> {
     type Config = Option<T>;
 
     fn init(worlds: &mut WorldCollection, _system_state: &mut SystemState, config: Self::Config) -> Self {
-        Self(config.unwrap_or_else(|| T::from_world(worlds)))
+        Self(config.unwrap_or_else(|| T::from_world(worlds.get_mut::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]))), PhantomData)
     }
 
     fn default_config() -> Option<T> {
@@ -650,8 +651,8 @@ unsafe impl<T: Component + FromWorld> SystemParamState for LocalState<T> {
     }
 }
 
-impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
-    type Item = Local<'a, T>;
+impl<'a, T: Component + FromWorld, W: WorldKey> SystemParamFetch<'a> for LocalState<T, W> {
+    type Item = Local<'a, T, W>;
 
     #[inline]
     unsafe fn get_param(
@@ -660,7 +661,7 @@ impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
         _worlds: &'a WorldCollection,
         _change_tick: u32,
     ) -> Self::Item {
-        Local(&mut state.0)
+        Local(&mut state.0, PhantomData)
     }
 }
 
@@ -682,13 +683,13 @@ impl<'a, T: Component + FromWorld> SystemParamFetch<'a> for LocalState<T> {
 ///
 /// # react_on_removal.system();
 /// ```
-pub struct RemovedComponents<'a, T> {
-    worlds: &'a WorldCollection,
+pub struct RemovedComponents<'a, T, W: WorldKey = MainWorld> {
+    worlds: &'a World,
     component_id: ComponentId,
-    marker: PhantomData<T>,
+    marker: PhantomData<(T, W)>,
 }
 
-impl<'a, T> RemovedComponents<'a, T> {
+impl<'a, T, W: WorldKey> RemovedComponents<'a, T, W> {
     /// Returns an iterator over the entities that had their `T` [`Component`] removed.
     pub fn iter(&self) -> std::iter::Cloned<std::slice::Iter<'_, Entity>> {
         self.worlds.removed_with_id(self.component_id)
@@ -696,23 +697,23 @@ impl<'a, T> RemovedComponents<'a, T> {
 }
 
 /// The [`SystemParamState`] of [`RemovedComponents`].
-pub struct RemovedComponentsState<T> {
+pub struct RemovedComponentsState<T, W: WorldKey = MainWorld> {
     component_id: ComponentId,
-    marker: PhantomData<T>,
+    marker: PhantomData<(T, W)>,
 }
 
-impl<'a, T: Component> SystemParam for RemovedComponents<'a, T> {
-    type Fetch = RemovedComponentsState<T>;
+impl<'a, T: Component, W: WorldKey> SystemParam for RemovedComponents<'a, T, W> {
+    type Fetch = RemovedComponentsState<T, W>;
 }
 
 // SAFE: no component access. removed component entity collections can be read in parallel and are
 // never mutably borrowed during system execution
-unsafe impl<T: Component> SystemParamState for RemovedComponentsState<T> {
+unsafe impl<T: Component, W: WorldKey> SystemParamState for RemovedComponentsState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, _system_state: &mut SystemState, _config: Self::Config) -> Self {
         Self {
-            component_id: worlds.components.get_or_insert_id::<T>(),
+            component_id: worlds.get_mut::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]).components.get_or_insert_id::<T>(),
             marker: PhantomData,
         }
     }
@@ -720,7 +721,7 @@ unsafe impl<T: Component> SystemParamState for RemovedComponentsState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: Component> SystemParamFetch<'a> for RemovedComponentsState<T> {
+impl<'a, T: Component, W: WorldKey> SystemParamFetch<'a> for RemovedComponentsState<T, W> {
     type Item = RemovedComponents<'a, T>;
 
     #[inline]
@@ -731,7 +732,7 @@ impl<'a, T: Component> SystemParamFetch<'a> for RemovedComponentsState<T> {
         _change_tick: u32,
     ) -> Self::Item {
         RemovedComponents {
-            worlds,
+            worlds: worlds.get::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]),
             component_id: state.component_id,
             marker: PhantomData,
         }
@@ -748,14 +749,15 @@ impl<'a, T: Component> SystemParamFetch<'a> for RemovedComponentsState<T> {
 /// # Panics
 ///
 /// Panics when used as a `SystemParameter` if the resource does not exist.
-pub struct NonSend<'w, T> {
+pub struct NonSend<'w, T, W: WorldKey = MainWorld> {
     pub(crate) value: &'w T,
     ticks: ComponentTicks,
     last_change_tick: u32,
     change_tick: u32,
+    world: PhantomData<W>,
 }
 
-impl<'w, T> Debug for NonSend<'w, T>
+impl<'w, T, W: WorldKey> Debug for NonSend<'w, T, W>
 where
     T: Debug,
 {
@@ -764,7 +766,7 @@ where
     }
 }
 
-impl<'w, T: Component> NonSend<'w, T> {
+impl<'w, T: Component, W: WorldKey> NonSend<'w, T, W> {
     /// Returns true if (and only if) this resource been added since the last execution of this
     /// system.
     pub fn is_added(&self) -> bool {
@@ -779,7 +781,7 @@ impl<'w, T: Component> NonSend<'w, T> {
     }
 }
 
-impl<'w, T: 'static> Deref for NonSend<'w, T> {
+impl<'w, T: 'static, W: WorldKey> Deref for NonSend<'w, T, W> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -788,25 +790,26 @@ impl<'w, T: 'static> Deref for NonSend<'w, T> {
 }
 
 /// The [`SystemParamState`] of [`NonSend`].
-pub struct NonSendState<T> {
+pub struct NonSendState<T, W: WorldKey = MainWorld> {
     component_id: ComponentId,
-    marker: PhantomData<fn() -> T>,
+    marker: PhantomData<(fn() -> T, W)>,
 }
 
-impl<'a, T: 'static> SystemParam for NonSend<'a, T> {
-    type Fetch = NonSendState<T>;
+impl<'a, T: 'static, W: WorldKey> SystemParam for NonSend<'a, T, W> {
+    type Fetch = NonSendState<T, W>;
 }
 
 // SAFE: NonSendComponentId and ArchetypeComponentId access is applied to SystemState. If this
 // NonSend conflicts with any prior access, a panic will occur.
-unsafe impl<T: 'static> SystemParamState for NonSendState<T> {
+unsafe impl<T: 'static, W: WorldKey> SystemParamState for NonSendState<T, W> {
     type Config = ();
 
     fn init(worlds: &mut WorldCollection, system_state: &mut SystemState, _config: Self::Config) -> Self {
         system_state.set_non_send();
+        let world = worlds.get_mut::<W>().expect(&format!("Couldn't find {}", type_name::<W>())[..]);
 
-        let component_id = worlds.initialize_non_send_resource::<T>();
-        let combined_access = system_state.component_access_set.combined_access_mut();
+        let component_id = world.initialize_non_send_resource::<T>();
+        let combined_access = system_state.get_component_access_sets_mut::<W>().combined_access_mut();
         if combined_access.has_write(component_id) {
             panic!(
                 "NonSend<{}> in system {} conflicts with a previous mutable resource access ({0}). Allowing this would break Rust's mutability rules. Consider removing the duplicate access.",
@@ -814,12 +817,12 @@ unsafe impl<T: 'static> SystemParamState for NonSendState<T> {
         }
         combined_access.add_read(component_id);
 
-        let resource_archetype = worlds.archetypes.resource();
+        let resource_archetype = world.archetypes.resource();
         let archetype_component_id = resource_archetype
             .get_archetype_component_id(component_id)
             .unwrap();
         system_state
-            .archetype_component_access
+            .get_archetype_component_access_mut::<W>()
             .add_read(archetype_component_id);
         Self {
             component_id,
@@ -830,8 +833,8 @@ unsafe impl<T: 'static> SystemParamState for NonSendState<T> {
     fn default_config() {}
 }
 
-impl<'a, T: 'static> SystemParamFetch<'a> for NonSendState<T> {
-    type Item = NonSend<'a, T>;
+impl<'a, T: 'static, W: WorldKey> SystemParamFetch<'a> for NonSendState<T, W> {
+    type Item = NonSend<'a, T, W>;
 
     #[inline]
     unsafe fn get_param(
@@ -842,6 +845,8 @@ impl<'a, T: 'static> SystemParamFetch<'a> for NonSendState<T> {
     ) -> Self::Item {
         worlds.validate_non_send_access::<T>();
         let column = worlds
+            .get_mut::<W>()
+            .expect(&format!("Couldn't find {}", type_name::<W>())[..])
             .get_populated_resource_column(state.component_id)
             .unwrap_or_else(|| {
                 panic!(
@@ -869,14 +874,15 @@ impl<'a, T: 'static> SystemParamFetch<'a> for NonSendState<T> {
 /// # Panics
 ///
 /// Panics when used as a `SystemParameter` if the resource does not exist.
-pub struct NonSendMut<'a, T: 'static> {
+pub struct NonSendMut<'a, T: 'static, W: WorldKey = MainWorld> {
     pub(crate) value: &'a mut T,
     ticks: &'a mut ComponentTicks,
     last_change_tick: u32,
     change_tick: u32,
+    world: PhantomData<W>
 }
 
-impl<'w, T: Component> NonSendMut<'w, T> {
+impl<'w, T: Component, W: WorldKey> NonSendMut<'w, T, W> {
     /// Returns true if (and only if) this resource been added since the last execution of this
     /// system.
     pub fn is_added(&self) -> bool {
@@ -891,7 +897,7 @@ impl<'w, T: Component> NonSendMut<'w, T> {
     }
 }
 
-impl<'a, T: 'static> Deref for NonSendMut<'a, T> {
+impl<'a, T: 'static, W: WorldKey> Deref for NonSendMut<'a, T, W> {
     type Target = T;
 
     #[inline]
@@ -900,7 +906,7 @@ impl<'a, T: 'static> Deref for NonSendMut<'a, T> {
     }
 }
 
-impl<'a, T: 'static> DerefMut for NonSendMut<'a, T> {
+impl<'a, T: 'static, W: WorldKey> DerefMut for NonSendMut<'a, T, W> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         self.ticks.set_changed(self.change_tick);
@@ -908,16 +914,16 @@ impl<'a, T: 'static> DerefMut for NonSendMut<'a, T> {
     }
 }
 
-impl<'a, T: 'static + core::fmt::Debug> core::fmt::Debug for NonSendMut<'a, T> {
+impl<'a, T: 'static + core::fmt::Debug, W: WorldKey> core::fmt::Debug for NonSendMut<'a, T, W> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("NonSendMut").field(&self.value).finish()
     }
 }
 
 /// The [`SystemParamState`] of [`NonSendMut`].
-pub struct NonSendMutState<T> {
+pub struct NonSendMutState<T, W: WorldKey = MainWorld> {
     component_id: ComponentId,
-    marker: PhantomData<fn() -> T>,
+    marker: PhantomData<(fn() -> T, W)>,
 }
 
 impl<'a, T: 'static> SystemParam for NonSendMut<'a, T> {

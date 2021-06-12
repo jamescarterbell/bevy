@@ -2,7 +2,7 @@ use crate as bevy_ecs;
 use crate::{
     component::Component,
     system::{Local, Res, ResMut, SystemParam},
-    world::{World, WorldCollection, MainWorld}
+    world::{World, WorldCollection, MainWorld, WorldKey}
 };
 use bevy_utils::tracing::trace;
 use std::{
@@ -153,18 +153,18 @@ fn map_instance_event<T>(event_instance: &EventInstance<T>) -> &T {
 
 /// Reads events of type `T` in order and tracks which events have already been read.
 #[derive(SystemParam)]
-pub struct EventReader<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> {
+pub struct EventReader<'a, T: Component, W: WorldKey> {
     last_event_count: Local<'a, (usize, PhantomData<T>)>,
     events: Res<'a, Events<T>, W>,
 }
 
 /// Sends events of type `T`.
 #[derive(SystemParam)]
-pub struct EventWriter<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> {
+pub struct EventWriter<'a, T: Component, W: WorldKey> {
     events: ResMut<'a, Events<T>, W>,
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> EventWriter<'a, T, W> {
+impl<'a, T: Component, W: WorldKey> EventWriter<'a, T, W> {
     pub fn send(&mut self, event: T) {
         self.events.send(event);
     }
@@ -254,7 +254,7 @@ fn internal_event_reader<'a, T>(
     }
 }
 
-impl<'a, T: Component, W: DerefMut<Target = World> + Send + Sync + 'static> EventReader<'a, T, W> {
+impl<'a, T: Component, W: WorldKey> EventReader<'a, T, W> {
     /// Iterates over the events this EventReader has not seen yet. This updates the EventReader's
     /// event counter, which means subsequent event reads will not include events that happened
     /// before now.
@@ -326,7 +326,7 @@ impl<T: Component> Events<T> {
     }
 
     /// A system that calls [Events::update] once per frame.
-    pub fn update_system<W: DerefMut<Target = World> + Send + Sync + 'static>(mut events: ResMut<Self, W>) {
+    pub fn update_system<W: WorldKey>(mut events: ResMut<Self, W>) {
         events.update();
     }
 

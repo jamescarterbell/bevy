@@ -35,33 +35,35 @@ impl Default for WorldId {
         WorldId(rand::random())
     }
 }
+
+pub trait WorldKey: Send + Sync + 'static{}
+
 /// [WorldCollection] stores and exposes operations on [world](World).
 pub struct WorldCollection{
-    pub(crate) worlds: HashMap<TypeId, Box<dyn DerefMut<Target = World> + Send + Sync>>,
+    pub(crate) worlds: HashMap<TypeId, World>,
 }
 
 impl WorldCollection{
     #[inline]
-    pub fn get<'w, W: DerefMut<Target = World> + Send + Sync + 'static>(&'w self) -> Option<&'w (dyn DerefMut<Target = World> + Send + Sync)>{
+    pub fn get<'w, W: WorldKey>(&'w self) -> Option<&'w World>{
         self.worlds.get(&TypeId::of::<W>()).map(|inner| inner.deref())
     }
 
     #[inline]
-    pub fn get_mut<'w, W: DerefMut<Target = World> + Send + Sync + 'static>(&'w mut self) -> Option<&'w mut (dyn DerefMut<Target = World> + Send + Sync + 'static)>{
+    pub fn get_mut<'w, W: WorldKey>(&'w mut self) -> Option<&'w mut World>{
         self.worlds.get_mut(&TypeId::of::<W>()).map(|inner| inner.deref_mut())
     }
 
     #[inline]
-    pub fn insert<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self, world: W){
-        self.worlds.insert(TypeId::of::<W>(), Box::new(world));
+    pub fn insert<W: WorldKey>(&mut self, world: World){
+        self.worlds.insert(TypeId::of::<W>(), world);
     }
 }
 
 impl Default for WorldCollection{
     fn default() -> Self{
         let mut worlds = HashMap::default();
-        let main_world: Box<dyn DerefMut<Target = World> + Send + Sync> = Box::new(MainWorld::default());
-        worlds.insert(TypeId::of::<MainWorld>(), main_world);
+        worlds.insert(TypeId::of::<MainWorld>(), World::default());
         Self{
             worlds
         }
@@ -69,58 +71,15 @@ impl Default for WorldCollection{
 }
 
 /// [MainWorld] is the default Bevy world.
-pub struct MainWorld{
-    world: World
-}
+pub struct MainWorld;
 
-impl Default for MainWorld{
-    fn default() -> Self{
-        Self{
-            world: World::default(),
-        }
-    }
-}
-
-impl Deref for MainWorld{
-    type Target = World;
-
-    fn deref(&self) -> &Self::Target{
-        &self.world
-    }
-}
-
-impl DerefMut for MainWorld{
-    fn deref_mut(&mut self) -> &mut Self::Target{
-        &mut self.world
-    }
-}
+impl WorldKey for MainWorld{}
 
 
-pub(crate) struct CollectionlessWorld{
-    world: World
-}
+pub(crate) struct CollectionlessWorld;
 
-impl Default for CollectionlessWorld{
-    fn default() -> Self{
-        Self{
-            world: World::default(),
-        }
-    }
-}
+impl WorldKey for CollectionlessWorld{}
 
-impl Deref for CollectionlessWorld{
-    type Target = World;
-
-    fn deref(&self) -> &Self::Target{
-        &self.world
-    }
-}
-
-impl DerefMut for CollectionlessWorld{
-    fn deref_mut(&mut self) -> &mut Self::Target{
-        &mut self.world
-    }
-}
 
 /// [World] stores and exposes operations on [entities](Entity), [components](Component),
 /// and their associated metadata.

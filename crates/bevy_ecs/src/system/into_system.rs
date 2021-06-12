@@ -5,7 +5,7 @@ use crate::{
     system::{
         check_system_change_tick, System, SystemId, SystemParam, SystemParamFetch, SystemParamState,
     },
-    world::{World, WorldCollection},
+    world::{World, WorldCollection, WorldKey},
 };
 use bevy_utils::HashMap;
 use bevy_ecs_macros::all_tuples;
@@ -51,7 +51,7 @@ impl SystemState {
     }
 
     #[inline]
-    pub fn get_component_access_sets_mut<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self) -> &mut FilteredAccessSet<ComponentId>{
+    pub fn get_component_access_sets_mut<W: WorldKey>(&mut self) -> &mut FilteredAccessSet<ComponentId>{
         self
             .component_access_sets
             .entry(TypeId::of::<W>())
@@ -59,7 +59,7 @@ impl SystemState {
     }
 
     #[inline]
-    pub fn get_component_access_sets<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &FilteredAccessSet<ComponentId>{
+    pub fn get_component_access_sets<W: WorldKey>(&self) -> &FilteredAccessSet<ComponentId>{
         self
             .component_access_sets
             .get(&TypeId::of::<W>())
@@ -67,7 +67,7 @@ impl SystemState {
     }
 
     #[inline]
-    pub fn get_archtype_component_access_mut<W: DerefMut<Target = World> + Send + Sync + 'static>(&mut self) -> &mut Access<ArchetypeComponentId>{
+    pub fn get_archetype_component_access_mut<W: WorldKey>(&mut self) -> &mut Access<ArchetypeComponentId>{
         self
             .archetype_component_accesses
             .entry(TypeId::of::<W>())
@@ -75,7 +75,7 @@ impl SystemState {
     }
 
     #[inline]
-    pub fn get_archtype_component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ArchetypeComponentId>{
+    pub fn get_archetype_component_access<W: WorldKey>(&self) -> &Access<ArchetypeComponentId>{
         self
             .archetype_component_accesses
             .get(&TypeId::of::<W>())
@@ -229,12 +229,12 @@ where
     }
 
     #[inline]
-    fn component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ComponentId> {
+    fn component_access<W: WorldKey>(&self) -> &Access<ComponentId> {
         &self.system_state.get_component_access_sets::<W>().combined_access()
     }
 
     #[inline]
-    fn archetype_component_access<W: DerefMut<Target = World> + Send + Sync + 'static>(&self) -> &Access<ArchetypeComponentId> {
+    fn archetype_component_access<W: WorldKey>(&self) -> &Access<ArchetypeComponentId> {
         &self.system_state.get_archtype_component_access::<W>()
     }
 

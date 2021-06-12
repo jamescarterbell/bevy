@@ -2,10 +2,11 @@ use crate::{
     bundle::Bundle,
     component::Component,
     entity::{Entities, Entity},
-    world::World,
+    world::{World, WorldCollection, MainWorld, WorldKey},
 };
 use bevy_utils::tracing::debug;
 use std::marker::PhantomData;
+use core::ops::DerefMut;
 
 /// A [`World`] mutation.
 pub trait Command: Send + Sync + 'static {
@@ -13,12 +14,21 @@ pub trait Command: Send + Sync + 'static {
 }
 
 /// A queue of [`Command`]s.
-#[derive(Default)]
-pub struct CommandQueue {
+pub struct CommandQueue<W: WorldKey> {
     commands: Vec<Box<dyn Command>>,
+    world: PhantomData<W>,
 }
 
-impl CommandQueue {
+impl<W: WorldKey> Default for CommandQueue<W>{
+    fn default() -> Self{
+        Self{
+            commands: Vec::default(),
+            world: PhantomData,
+        }
+    }
+}
+
+impl<W: WorldKey> CommandQueue<W> {
     /// Execute the queued [`Command`]s in the world.
     /// This clears the queue.
     pub fn apply(&mut self, world: &mut World) {
@@ -42,14 +52,15 @@ impl CommandQueue {
 }
 
 /// A list of commands that will be run to modify a [`World`].
-pub struct Commands<'a> {
-    queue: &'a mut CommandQueue,
+pub struct Commands<'a, W: WorldKey = MainWorld> {
+    queue: &'a mut CommandQueue<W>,
     entities: &'a Entities,
+    worlds: PhantomData<W>,
 }
 
-impl<'a> Commands<'a> {
+impl<'a, W: WorldKey> Commands<'a, W> {
     /// Create a new `Commands` from a queue and a world.
-    pub fn new(queue: &'a mut CommandQueue, world: &'a World) -> Self {
+    pub fn new(queue: &'a mut CommandQueue<W>, world: &'a World) -> Self {
         Self {
             queue,
             entities: world.entities(),
